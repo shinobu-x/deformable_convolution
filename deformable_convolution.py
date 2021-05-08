@@ -4,7 +4,7 @@ from torch import nn
 # Deformable Convolutional Networks
 # https://arxiv.org/abs/1703.06211
 """
-y(p_0) = \sum_{p_n \in R}w(p_n)x(p_0 + p_n)
+y(p_0) = \sum_{p_n \in R}w(p_n)x(p_0 + p_n + \delta p_n)
 """
 class DeformableConvolution(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size = 3, padding = 1,
@@ -25,13 +25,17 @@ class DeformableConvolution(nn.Module):
         output = (output[i] * 0.1 for i in range(len(output)))
 
     def forward(self, x):
+        # R = {(x_1, y_2),..., (x_n, y_n)} | n = 1,..., N
         offset = self.offsets(x)
         dtype = offset.data.type()
         kernel_size = self.kernel_size
+        # N = |R|
         N = offset.size(1) // 2
         if self.padding:
             x = self.zero_padding(x)
+        # (b, 2N, h, w)
         p = self.get_p(offset, dtype)
+        # (b, h, w, 2N)
         p = p.contiguous().permute(0, 2, 3, 1)
         q_lt = p.detach().floor()
         q_rb = q_lt + 1
@@ -55,6 +59,8 @@ class DeformableConvolution(nn.Module):
         x_q_rb = self.get_x_q(x, q_rb, N)
         x_q_lb = self.get_x_q(x, q_lb, N)
         x_q_rt = self.get_x_q(x, q_rt, N)
+        # x(p) = \sum_q G(q, p) * x(q)
+        # where G(q, p) = g(q_x, p_x) * g(q_y, q_x)
         x_offset = g_lt.unsqueeze(dim = 1) * x_q_lt + g_rb.unsqueeze(dim = 1
                 ) * x_q_rb + g_lb.unsqueeze(dim = 1) * x_q_lb + g_rt.unsqueeze(
                         dim = 1) * x_q_rt
